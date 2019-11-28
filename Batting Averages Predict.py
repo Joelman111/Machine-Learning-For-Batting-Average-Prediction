@@ -1,19 +1,38 @@
+
+
+
+######### MAKE SURE TO INSTALL ALL OF THESE LIBRARIES ###########
+
+
+
 import csv
-import math
 import sqlite3
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import sklearn
 from IPython.display import display
 from sklearn.linear_model import LinearRegression
 import random
 import statistics
 
+def load_batting_data():
+	""" Create an in-memory SQLite database and load the baseball data
+    Input:
+        None
+    Output:
+        conn (sqlite3.Connection) : Connection object corresponding to the database; used to perform SQL commands.
+    """
 
+    # Create a new database that will be stored in memory
+    # The conn object is the representation of the database in the code
+    conn = sqlite3.connect(":memory:")
+    conn.text_factory = str
+    
+    # Load the batting stats and personal info into the connection
+    load_from_filepath(conn, 'baseballdatabank-2019.2/baseballdatabank-2019.2/core/Batting.csv', 'baseballdatabank-2019.2/baseballdatabank-2019.2/core/People.csv')
+    return conn
 
 def load_from_filepath(conn, batting_filepath, people_filepath):
-    """ Load baseball data in the two files as tables into an in-memory SQLite database
+    """ Load baseball data in the two files as tables into the given connection
     Input:
         conn (sqlite3.Connection) : Connection object corresponding to the database; used to perform SQL commands.
         batting_filepath (str) : absolute/relative path to Batting.csv file
@@ -22,9 +41,13 @@ def load_from_filepath(conn, batting_filepath, people_filepath):
         None
     """
     
+    # This is cursor object you will use to interact with the database
+    # Cursors will hold the results of querying the database
     c = conn.cursor()
 
-    # open the csv file in Microsoft Excel (or any text editor) to determine the names and types of each column
+    # 'execute' executes the given SQL command (a string with SQL syntax)
+    # This command creates a table named "batting_stats" with the given columns, each with the specified type
+    # you can open the csv file in Microsoft Excel (or any text editor) to determine the names and types of each column
     c.execute('''CREATE TABLE batting_stats (
                     playerID TEXT,
                     yearID INTEGER,
@@ -49,6 +72,7 @@ def load_from_filepath(conn, batting_filepath, people_filepath):
                     SF INTEGER,
                     GIDP INTEGER
                     )''')
+    # Same as above, but creates a table named "people" with different columns
     c.execute('''CREATE TABLE people (
                     playerID TEXT PRIMARY KEY,
                     birthYear INTEGER,
@@ -76,9 +100,11 @@ def load_from_filepath(conn, batting_filepath, people_filepath):
                     bbrefID TEXT
                     )''')
     
-    #collect the data for each row, then insert into the database
+    # Open the batting stats file
     with open(batting_filepath,'r') as fin:
+    	# Read all the info into a dictionary
         info = csv.DictReader(fin)
+        # For each row, load the columns. to_insert will be a list of tuples, which contain the column values of a particular row
         to_insert = [(row['playerID'], row['yearID'], row['stint'], 
                       row['teamID'], row['lgID'], row['G'], row['AB'],
                       row['R'], row['H'], row['2B'], row['3B'], row['HR'],
@@ -86,9 +112,12 @@ def load_from_filepath(conn, batting_filepath, people_filepath):
                       row['SO'], row['IBB'], row['HBP'], row['SH'], 
                       row['SF'], row['GIDP']) for row in info]
         
+    # 'executemany' allows you to execute a list of commands at once
+    # Insert each row into the batting_stats table we created
     c.executemany("""INSERT INTO batting_stats VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
                   ?, ?, ?, ?, ?, ?, ?, ?, ?)""", to_insert)
     
+    # Same as above but for the people table
     with open(people_filepath,'r') as fin:
         info = csv.DictReader(fin)
         to_insert = [(row['playerID'], row['birthYear'], row['birthMonth'],
@@ -103,96 +132,142 @@ def load_from_filepath(conn, batting_filepath, people_filepath):
     c.executemany("""INSERT INTO people VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
                   ?, ?, ?, ?, ?, ?, ?)""", to_insert)
     
+    # 'commit' commits the changes to the database. Must be called after altering the database
     conn.commit()
     
     print("Databases loaded!")
 
 
-def load_batting_data():
-    conn = sqlite3.connect(":memory:")
-    conn.text_factory = str
-    
-    #if you did not move you folders to the same folder as this tutorial, 
-    #you can change these to the correct filepath for your system
-    load_from_filepath(conn, 'baseballdatabank-2019.2/baseballdatabank-2019.2/core/Batting.csv', 'baseballdatabank-2019.2/baseballdatabank-2019.2/core/People.csv')
-    return conn
-
-conn = load_batting_data()
-
-
 def display_results(c):
-    # Function for displaying the result of a query as a Dataframe
-    # No need to worry about this
+    """ Prints out the database or query results held in the given cursor
+    Input:
+        conn (sqlite3.Cursor) : Cursor object that contains the query results
+    Output:
+        None
+    """
+
+    # No need to worry about what this is actually doing
     df = pd.DataFrame(c.fetchall())
     df.columns = [i[0] for i in c.description]
     display(df)
 
+
 def combine_stint():
-	results = """SELECT *, bs.lgID FROM (SELECT playerID, yearID, SUM(AB) AS AB, SUM(H) AS H, SUM(BB) AS BB, SUM(SO) AS SO FROM batting_stats GROUP BY playerID, yearID) as input LEFT JOIN (SELECT * FROM batting_stats WHERE stint = 1) as bs ON input.playerID = bs.playerID AND input.yearID = bs.yearID"""
+	""" Return the query string that will combine the stints of all players into just a single stint for each season.
+		Adds together season totals for all stints, keeps only the league the player played in to start the season.
+    Input:
+        None
+    Output:
+        None
+    """
+    # 'Select' gets the requested columns. * means get all columns, 'bs.lgID' means 'in table bs, get columns lgID'
+    # 'From' says the Select statement applies to this table. Here, the first 'From' refers to the table generated in the parentheses (a subquery)
+    # 'As' means I rename the object to the name that follows this As statement. E.g. the table generated from the subquery in parentheses is renamed to 'input'
+    # 'Group By' means split the players into groups based on them having the same playerID and yearID
+    # 'Left Join' means combine the columns of two seperate tables where the playerID and yearID match in tables
+    # Results of this query will be a table containing, the playerID, the yearID, the lgID of the player's first stint, the sum of the player's ABs across all of his stints that season, the sum of the player's hits across all of his stints that season, ... for all relevant stats
+	results = """SELECT *, bs.lgID FROM (SELECT playerID, yearID, SUM(AB) AS AB, SUM(H) AS H, SUM(BB) AS BB, SUM(SO) AS SO FROM batting_stats GROUP BY playerID, yearID) AS input LEFT JOIN (SELECT * FROM batting_stats WHERE stint = 1) as bs ON input.playerID = bs.playerID AND input.yearID = bs.yearID"""
 	return results
 
 
 def extract_player_info(table):
-    """ Returns a table with the real player names attached to the input table.
+    """ Returns the query string that will create a table called 'revisedStats' that has the playerID, age, yearID, a binary column for NL, a binary column for AL, BA, walk rate, and strikeout rate for each player
     Input:
         table (str): SQL string representing the table we will query from.
     Output:
-        results (str): Query string that creates a table with names attached to stats
+        results (str): Query string that creates a table with all the stats we will need
     """
+
+    # Create a new table containing the stats we care about for the model (calculating the age, the AL/NL binary value, the batting average, the walk rate, the strikeout rate)
+    # Only include years from 1989 to current year
     results = """CREATE TABLE revisedStats AS SELECT input.playerID as playerID, yearID-people.birthYear as age, yearID, CASE input.lgID WHEN 'NL' THEN 1 ELSE 0 END AS NL, CASE input.lgID WHEN 'AL' THEN 1 ELSE 0 END AS AL, AB,
     	IFNULL(ROUND(CAST(input.H AS float) / CAST(input.AB AS float), 3),0) AS BA, IFNULL(ROUND(CAST(input.BB AS float) / CAST(input.AB AS float), 3),0) AS BB, IFNULL(ROUND(CAST(input.SO AS float) / CAST(input.AB AS float), 3),0) AS SO 
     	FROM ("""+table+""") AS input LEFT JOIN people ON input.playerID = people.playerID WHERE yearID>=1989"""
     return results
 
 def get_prev_year_stats():
-    """ Remove the players fewer than n ABs
+    """ Returns the query string that will create a table of the current year, player's current age, player's current league, player's previous ABs, player's previous BA, player's previous walk rate, player's previous strikeout rate, and player's BA for this season (what we want to predict)
     Input:
         table (str): SQL string representing the table we will query from.
     Output:
         results (str): SQL query to execute.
     """
-    results = """SELECT curr.yearID as yearID, curr.age as age, curr.NL as NL, curr.AL as AL, past.AB as lastAB, past.BA as lastBA, past.BB as lastBB, past.SO as lastSO, curr.BA as BA FROM revisedStats curr INNER JOIN revisedStats past ON curr.playerID = past.playerID AND curr.yearID = past.yearID+1 WHERE curr.AB>=200"""
+
+    # Use a left join to combine the revised stats table with itself (so we can get last year's stats and this year's stats together)
+    # Left join on the playerID to match up the players, and also on the year and the previous year to get the stats of this player in the previous season
+    # Only include players who ended up with more than 200 ABs in the prediction year
+    results = """SELECT curr.yearID AS yearID, curr.age AS age, curr.NL AS NL, curr.AL AS AL, past.AB AS lastAB, past.BA AS lastBA, past.BB AS lastBB, past.SO AS lastSO, curr.BA AS BA FROM revisedStats curr INNER JOIN revisedStats past ON curr.playerID = past.playerID AND curr.yearID = past.yearID+1 WHERE curr.AB>=200"""
     return results
 
-#get seasons 1989-2018
+
+# Get a new loaded database
+conn = load_batting_data()
+
+# Get query string to create 'revisedStats' table as defined above
 basic_info = extract_player_info(combine_stint())
 conn.cursor().execute(basic_info)
 
-#attach player names to result
+# Combine previous year's stats with prediction year to get all features and labels
 q2 = get_prev_year_stats()
 c = conn.cursor().execute(q2)
 
+# Convert the SQLite database to a pandas dataframe so that we can work with it in sci-kitlearn
+# Really just massages the data into a different form of the same stats
 df = pd.DataFrame(c.fetchall())
 df.columns = [i[0] for i in c.description]
 data = df[["yearID","age","NL","AL","lastAB","lastBA","lastBB","lastSO","BA"]].values.tolist()
 
+
+# Code for training a single LinearRegression model. Uncomment code below and comment the for loop after to run this
+
+
 """
+
+# Randomly shuffle the data (I might get rid of this since it is kinda unrealistic since you won't be using data from more recent year to predict outcomes from previous years)
 random.shuffle(data)
 n = len(data)
-split = int(n*.8)
+
+# Index where we will split data into a training set and a test set (training set being 80% of the data)
+splitIdx = int(n*.8)
+
+# Features
 features = [[v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]] for v in data]
+
+# Prediction labels
 BAs = [[v[8]] for v in data]
 
+# Get the training data and create a numpy array
 train_features = np.array(features[:split])
 train_output = np.array(BAs[:split])
 
+# Get the test data and create a numpy array
 test_features = np.array(features[split:])
 test_output = np.array(BAs[split:])
 
-
+# Create a new LinearRegression model
 model = LinearRegression(fit_intercept=True, normalize=False)
 
 # Now we fit it with the data
 model.fit(train_features, train_output)
+
+# Prints internal variables of the trained model (gives insight into what is happening)
 print(model.score(train_features, train_output))
 print(model.intercept_, model.coef_)
 
+# Create an array of predictions
 pred_ba = model.predict(test_features)
 
-
+# Prints the average error of the model on the test set
+print((abs(pred_ba-test_output)/test_output *100).mean())
 """
+
+# Code for training the model many different times with different training data.
+
+# Keep track of average errors to get statistics about the model
 errors = []
 for i in range(100):
+
+	# Same as training code above
 	random.shuffle(data)
 	n = len(data)
 	split = int(n*.8)
@@ -207,19 +282,24 @@ for i in range(100):
 
 
 	model = LinearRegression(fit_intercept=True, normalize=False)
-
-	# Now we fit it with the data
 	model.fit(train_features, train_output)
 
 	pred_ba = model.predict(test_features)
 
 	errors.append((abs(pred_ba-test_output)/test_output *100).mean())
 
+# Print mean and standard deviation of average error for over 100 models
 print(statistics.mean(errors))
 print(statistics.stdev(errors))
+
+# Print min/max average error of the 100 models trained in the loop
 print(min(errors))
 print(max(errors))
 
+
+
+
+######## IGNORE BELOW THIS LINE #########
 """
 # Get the real batting average using the functions we made
 c = conn.cursor().execute(get_mean_ba_per_year(set_min_abs(get_ba(get_season_stats("batting_stats", 2018)), 200)))
