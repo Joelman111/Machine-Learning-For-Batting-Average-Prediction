@@ -133,7 +133,7 @@ def load_batting_data():
 
     #if you did not move you folders to the same folder as this tutorial,
     #you can change these to the correct filepath for your system
-    load_from_filepath(conn, 'baseballdatabank-2019.2/baseballdatabank-2019.2/core/Batting.csv', 'baseballdatabank-2019.2/baseballdatabank-2019.2/core/People.csv')
+    # load_from_filepath(conn, 'baseballdatabank-2019.2/baseballdatabank-2019.2/core/Batting.csv', 'baseballdatabank-2019.2/baseballdatabank-2019.2/core/People.csv')
     return conn
 
 conn = load_batting_data()
@@ -220,12 +220,18 @@ for i in range(2010, 2018):
     c = conn.cursor().execute(get_relevant_features(set_min_abs("batting_stats", 100), 2000, i))
     x = np.concatenate((x, pd.DataFrame(c.fetchall()).to_numpy()))
 
+print(x[0])
 X = x[:,1:]
-Y = x[:,1]
+print(X[0])
+# print(X[0].toList())
+Y = x[:,0]
+print(Y[0])
 
 seed = 7
 test_size = 0.33
 X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=test_size, random_state=seed)
+
+print(len(X_train))
 # xgb.DMatrix(x)
 
 
@@ -235,13 +241,13 @@ X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=test_size, r
 
 start_time = time.time()
 # fit model no training data
-model = xgb.XGBClassifier()
+model = xgb.XGBRegressor()
 model.fit(X_train, y_train)
 elapsed_time = time.time() - start_time
 print(elapsed_time)
 
 
-with open('XGBModel','rb') as f:
+with open('XGBModel1','wb+') as f:
     pickle.dump(model, f)
 
 # In[ ]:
@@ -255,6 +261,8 @@ predictions = [value for value in y_pred]
 c = 0
 for i in range(len(predictions)):
     c += round(abs(y_test[i]-predictions[i])/y_test[i] * 100, 3)
+
+print("average error")
 print(c/len(predictions))
 
 rms = math.sqrt(sk.metrics.mean_squared_error(y_test, predictions))
