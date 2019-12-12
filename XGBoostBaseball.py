@@ -210,22 +210,20 @@ def get_relevant_features(table, lo, year):
 # c = conn.cursor().execute(get_season_stats("batting_stats", 2018))
 # c = conn.cursor().execute(get_features("batting_stats", 2000, 2017, 2017))
 # display_results(c)
-c = conn.cursor().execute(get_relevant_features(set_min_abs("batting_stats", 100), 2000, 2018))
+c = conn.cursor().execute(get_relevant_features(set_min_abs("batting_stats", 200), 1900, 2018))
 # display_results(c)
 
-df = pd.DataFrame(c.fetchall())
+"""df = pd.DataFrame(c.fetchall())
 df.columns = [i for i in c.description]
-x = df.to_numpy()
-for i in range(2010, 2018):
-    c = conn.cursor().execute(get_relevant_features(set_min_abs("batting_stats", 100), 2000, i))
+x = df.to_numpy()"""
+x = np.empty((0, 6))
+for i in range(1990, 2018):
+    c = conn.cursor().execute(get_relevant_features(set_min_abs("batting_stats", 200), 1980, i))
     x = np.concatenate((x, pd.DataFrame(c.fetchall()).to_numpy()))
 
-print(x[0])
 X = x[:,1:]
-print(X[0])
 # print(X[0].toList())
 Y = x[:,0]
-print(Y[0])
 
 seed = 7
 test_size = 0.33
@@ -239,12 +237,9 @@ print(len(X_train))
 # In[ ]:
 
 
-start_time = time.time()
 # fit model no training data
-model = xgb.XGBRegressor()
+model = xgb.XGBRegressor(objective='reg:squarederror')
 model.fit(X_train, y_train)
-elapsed_time = time.time() - start_time
-print(elapsed_time)
 
 
 with open('XGBModel1','wb+') as f:
